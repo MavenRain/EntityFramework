@@ -14,9 +14,21 @@ namespace Microsoft.Data.Entity.Commands.Migrations
 {
     public class ModelSnapshotTest
     {
-        public class Sample
+        public class EntityWithOneProperty
         {
             public int Id { get; set; }
+        }
+
+        public class EntityWithTwoProperties
+        {
+            public int Id { get; set; }
+            public int AlternateId { get; set; }
+        }
+
+        public class EntityWithStringProperty
+        {
+            public int Id { get; set; }
+            public string Name { get; set; }
         }
 
         #region Model
@@ -37,25 +49,37 @@ return builder.Model;
                 o =>
                 {
                     Assert.Equal(1, o.Annotations.Count());
-                    Assert.Equal("AnnotationName", o.Annotations.First().Name);
-                    Assert.Equal("AnnotationValue", o.Annotations.First().Value);
+                    Assert.Equal("AnnotationValue", o["AnnotationName"]);
                 });
         }
 
         [Fact]
-        public void Entity_is_stored_in_model_snapshot()
+        public void Entities_are_stored_in_model_snapshot()
         {
             var builder = new ModelBuilderFactory().CreateConventionBuilder();
-            builder.Entity<Sample>();
+            builder.Entity<EntityWithOneProperty>();
+            builder.Entity<EntityWithTwoProperties>();
 
             var code =
                  @"var builder = new ModelBuilder(new ConventionSet());
 
-builder.Entity(""Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+Sample"", b =>
+builder.Entity(""Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithOneProperty"", b =>
     {
         b.Property<int>(""Id"")
             .GenerateValueOnAdd()
+            .StoreGeneratedPattern(StoreGeneratedPattern.Identity)
             .Annotation(""OriginalValueIndex"", 0);
+        b.Key(""Id"");
+    });
+
+builder.Entity(""Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithTwoProperties"", b =>
+    {
+        b.Property<int>(""Id"")
+            .GenerateValueOnAdd()
+            .StoreGeneratedPattern(StoreGeneratedPattern.Identity)
+            .Annotation(""OriginalValueIndex"", 0);
+        b.Property<int>(""AlternateId"")
+            .Annotation(""OriginalValueIndex"", 1);
         b.Key(""Id"");
     });
 
@@ -64,10 +88,389 @@ return builder.Model;
             Test(builder.Model, code,
                 o =>
                     {
-                        Assert.Equal(1, o.EntityTypes.Count);
-                        Assert.Equal("Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+Sample", o.EntityTypes.First().Name);
+                        Assert.Equal(2, o.EntityTypes.Count);
+                        Assert.Equal("Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithOneProperty", o.EntityTypes[0].Name);
+                        Assert.Equal("Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithTwoProperties", o.EntityTypes[1].Name);
                     });
         }
+
+        #endregion
+
+        #region EntityType
+
+        [Fact]
+        public void EntityType_annotations_are_stored_in_snapshot()
+        {
+            var builder = new ModelBuilderFactory().CreateConventionBuilder();
+            builder.Entity<EntityWithOneProperty>().Annotation("AnnotationName", "AnnotationValue");
+
+            var code =
+                 @"var builder = new ModelBuilder(new ConventionSet());
+
+builder.Entity(""Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithOneProperty"", b =>
+    {
+        b.Property<int>(""Id"")
+            .GenerateValueOnAdd()
+            .StoreGeneratedPattern(StoreGeneratedPattern.Identity)
+            .Annotation(""OriginalValueIndex"", 0);
+        b.Key(""Id"");
+        b.Annotation(""AnnotationName"", ""AnnotationValue"");
+    });
+
+return builder.Model;
+";
+            Test(builder.Model, code,
+                o =>
+                {
+                    Assert.Equal(1, o.EntityTypes[0].Annotations.Count());
+                    Assert.Equal("AnnotationValue", o.EntityTypes[0]["AnnotationName"]);
+                });
+        }
+
+        [Fact]
+        public void Properties_are_stored_in_snapshot()
+        {
+            var builder = new ModelBuilderFactory().CreateConventionBuilder();
+            builder.Entity<EntityWithTwoProperties>();
+
+            var code =
+                 @"var builder = new ModelBuilder(new ConventionSet());
+
+builder.Entity(""Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithTwoProperties"", b =>
+    {
+        b.Property<int>(""Id"")
+            .GenerateValueOnAdd()
+            .StoreGeneratedPattern(StoreGeneratedPattern.Identity)
+            .Annotation(""OriginalValueIndex"", 0);
+        b.Property<int>(""AlternateId"")
+            .Annotation(""OriginalValueIndex"", 1);
+        b.Key(""Id"");
+    });
+
+return builder.Model;
+";
+            Test(builder.Model, code,
+                o =>
+                {
+                    Assert.Equal(2, o.EntityTypes.First().GetProperties().Count());
+                    Assert.Equal("Id", o.EntityTypes.First().GetProperties().ElementAt(0).Name);
+                    Assert.Equal("AlternateId", o.EntityTypes.First().GetProperties().ElementAt(1).Name);
+                });
+        }
+
+        [Fact]
+        public void Primary_key_is_stored_in_snapshot()
+        {
+            var builder = new ModelBuilderFactory().CreateConventionBuilder();
+            builder.Entity<EntityWithTwoProperties>().Key(t => new { t.Id, t.AlternateId });
+
+            var code =
+                 @"var builder = new ModelBuilder(new ConventionSet());
+
+builder.Entity(""Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithTwoProperties"", b =>
+    {
+        b.Property<int>(""Id"")
+            .GenerateValueOnAdd()
+            .StoreGeneratedPattern(StoreGeneratedPattern.Identity)
+            .Annotation(""OriginalValueIndex"", 0);
+        b.Property<int>(""AlternateId"")
+            .GenerateValueOnAdd()
+            .Annotation(""OriginalValueIndex"", 1);
+        b.Key(""Id"", ""AlternateId"");
+    });
+
+return builder.Model;
+";
+            Test(builder.Model, code,
+                o =>
+                {
+                    Assert.Equal(2, o.EntityTypes.First().GetPrimaryKey().Properties.Count);
+                    Assert.Equal("Id", o.EntityTypes.First().GetPrimaryKey().Properties[0].Name);
+                    Assert.Equal("AlternateId", o.EntityTypes.First().GetPrimaryKey().Properties[1].Name);
+                });
+        }
+
+        [Fact]
+        public void Indexes_are_stored_in_snapshot()
+        {
+            var builder = new ModelBuilderFactory().CreateConventionBuilder();
+            builder.Entity<EntityWithTwoProperties>().Index(t => t.AlternateId);
+
+            var code =
+                 @"var builder = new ModelBuilder(new ConventionSet());
+
+builder.Entity(""Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithTwoProperties"", b =>
+    {
+        b.Property<int>(""Id"")
+            .GenerateValueOnAdd()
+            .StoreGeneratedPattern(StoreGeneratedPattern.Identity)
+            .Annotation(""OriginalValueIndex"", 0);
+        b.Property<int>(""AlternateId"")
+            .Annotation(""OriginalValueIndex"", 1);
+        b.Key(""Id"");
+        b.Index(""AlternateId"");
+    });
+
+return builder.Model;
+";
+            Test(builder.Model, code,
+                o =>
+                {
+                    Assert.Equal(1, o.EntityTypes.First().GetIndexes().Count());
+                    Assert.Equal("AlternateId", o.EntityTypes.First().GetIndexes().First().Properties[0].Name);
+                });
+        }
+
+        #endregion
+
+        #region Property
+
+        [Fact]
+        public void Property_annotations_are_stored_in_snapshot()
+        {
+            var builder = new ModelBuilderFactory().CreateConventionBuilder();
+            builder.Entity<EntityWithOneProperty>().Property<int>("Id").Annotation("AnnotationName", "AnnotationValue");
+
+            var code =
+                 @"var builder = new ModelBuilder(new ConventionSet());
+
+builder.Entity(""Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithOneProperty"", b =>
+    {
+        b.Property<int>(""Id"")
+            .GenerateValueOnAdd()
+            .StoreGeneratedPattern(StoreGeneratedPattern.Identity)
+            .Annotation(""AnnotationName"", ""AnnotationValue"")
+            .Annotation(""OriginalValueIndex"", 0);
+        b.Key(""Id"");
+    });
+
+return builder.Model;
+";
+            Test(builder.Model, code,
+                o =>
+                {
+                    Assert.Equal(3, o.EntityTypes[0].GetProperty("Id").Annotations.Count());
+                    Assert.Equal("AnnotationValue", o.EntityTypes[0].GetProperty("Id")["AnnotationName"]);
+                });
+        }
+
+        [Fact]
+        public void Property_nullability_is_stored_in_snapshot()
+        {
+            var builder = new ModelBuilderFactory().CreateConventionBuilder();
+            builder.Entity<EntityWithStringProperty>().Property<string>("Name").Required();
+
+            var code =
+                 @"var builder = new ModelBuilder(new ConventionSet());
+
+builder.Entity(""Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithStringProperty"", b =>
+    {
+        b.Property<int>(""Id"")
+            .GenerateValueOnAdd()
+            .StoreGeneratedPattern(StoreGeneratedPattern.Identity)
+            .Annotation(""OriginalValueIndex"", 0);
+        b.Property<string>(""Name"")
+            .Required()
+            .Annotation(""OriginalValueIndex"", 1);
+        b.Key(""Id"");
+    });
+
+return builder.Model;
+";
+            Test(builder.Model, code,
+                o =>
+                {
+                    Assert.Equal(false, o.EntityTypes[0].GetProperty("Name").IsNullable);
+                });
+        }
+
+        [Fact]
+        public void Property_store_generated_pattern_is_stored_in_snapshot()
+        {
+            var builder = new ModelBuilderFactory().CreateConventionBuilder();
+            builder.Entity<EntityWithTwoProperties>().Property<int>("AlternateId").StoreGeneratedPattern(StoreGeneratedPattern.Identity);
+
+            var code =
+                 @"var builder = new ModelBuilder(new ConventionSet());
+
+builder.Entity(""Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithTwoProperties"", b =>
+    {
+        b.Property<int>(""Id"")
+            .GenerateValueOnAdd()
+            .StoreGeneratedPattern(StoreGeneratedPattern.Identity)
+            .Annotation(""OriginalValueIndex"", 0);
+        b.Property<int>(""AlternateId"")
+            .StoreGeneratedPattern(StoreGeneratedPattern.Identity)
+            .Annotation(""OriginalValueIndex"", 1);
+        b.Key(""Id"");
+    });
+
+return builder.Model;
+";
+            Test(builder.Model, code,
+                o =>
+                {
+                    Assert.Equal(StoreGeneratedPattern.Identity, o.EntityTypes[0].GetProperty("AlternateId").StoreGeneratedPattern);
+                });
+        }
+
+        [Fact]
+        public void Property_max_length_is_stored_in_snapshot()
+        {
+            var builder = new ModelBuilderFactory().CreateConventionBuilder();
+            builder.Entity<EntityWithStringProperty>().Property<string>("Name").MaxLength(100);
+
+            var code =
+                 @"var builder = new ModelBuilder(new ConventionSet());
+
+builder.Entity(""Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithStringProperty"", b =>
+    {
+        b.Property<int>(""Id"")
+            .GenerateValueOnAdd()
+            .StoreGeneratedPattern(StoreGeneratedPattern.Identity)
+            .Annotation(""OriginalValueIndex"", 0);
+        b.Property<string>(""Name"")
+            .Annotation(""MaxLength"", 100)
+            .Annotation(""OriginalValueIndex"", 1);
+        b.Key(""Id"");
+    });
+
+return builder.Model;
+";
+            Test(builder.Model, code,
+                o =>
+                {
+                    Assert.Equal(100, o.EntityTypes[0].GetProperty("Name").GetMaxLength());
+                });
+        }
+
+        [Fact]
+        public void Property_generate_value_on_add_is_stored_in_snapshot()
+        {
+            var builder = new ModelBuilderFactory().CreateConventionBuilder();
+            builder.Entity<EntityWithTwoProperties>().Property<int>("AlternateId").GenerateValueOnAdd();
+
+            var code =
+                 @"var builder = new ModelBuilder(new ConventionSet());
+
+builder.Entity(""Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithTwoProperties"", b =>
+    {
+        b.Property<int>(""Id"")
+            .GenerateValueOnAdd()
+            .StoreGeneratedPattern(StoreGeneratedPattern.Identity)
+            .Annotation(""OriginalValueIndex"", 0);
+        b.Property<int>(""AlternateId"")
+            .GenerateValueOnAdd()
+            .Annotation(""OriginalValueIndex"", 1);
+        b.Key(""Id"");
+    });
+
+return builder.Model;
+";
+            Test(builder.Model, code,
+                o =>
+                {
+                    Assert.Equal(true, o.EntityTypes[0].GetProperty("AlternateId").IsValueGeneratedOnAdd);
+                });
+        }
+
+        [Fact]
+        public void Property_concurrency_token_is_stored_in_snapshot()
+        {
+            var builder = new ModelBuilderFactory().CreateConventionBuilder();
+            builder.Entity<EntityWithTwoProperties>().Property<int>("AlternateId").ConcurrencyToken();
+
+            var code =
+                 @"var builder = new ModelBuilder(new ConventionSet());
+
+builder.Entity(""Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithTwoProperties"", b =>
+    {
+        b.Property<int>(""Id"")
+            .GenerateValueOnAdd()
+            .StoreGeneratedPattern(StoreGeneratedPattern.Identity)
+            .Annotation(""OriginalValueIndex"", 0);
+        b.Property<int>(""AlternateId"")
+            .ConcurrencyToken()
+            .Annotation(""OriginalValueIndex"", 1);
+        b.Key(""Id"");
+    });
+
+return builder.Model;
+";
+            Test(builder.Model, code,
+                o =>
+                {
+                    Assert.Equal(true, o.EntityTypes[0].GetProperty("AlternateId").IsConcurrencyToken);
+                });
+        }
+
+        #endregion
+
+        #region Index
+
+        [Fact]
+        public void Index_annotations_are_stored_in_snapshot()
+        {
+            var builder = new ModelBuilderFactory().CreateConventionBuilder();
+            builder.Entity<EntityWithTwoProperties>().Index(t => t.AlternateId).Annotation("AnnotationName", "AnnotationValue");
+
+            var code =
+                 @"var builder = new ModelBuilder(new ConventionSet());
+
+builder.Entity(""Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithTwoProperties"", b =>
+    {
+        b.Property<int>(""Id"")
+            .GenerateValueOnAdd()
+            .StoreGeneratedPattern(StoreGeneratedPattern.Identity)
+            .Annotation(""OriginalValueIndex"", 0);
+        b.Property<int>(""AlternateId"")
+            .Annotation(""OriginalValueIndex"", 1);
+        b.Key(""Id"");
+        b.Index(""AlternateId"")
+            .Annotation(""AnnotationName"", ""AnnotationValue"");
+    });
+
+return builder.Model;
+";
+            Test(builder.Model, code,
+                o =>
+                {
+                    Assert.Equal("AnnotationValue", o.EntityTypes[0].GetIndexes().First()["AnnotationName"]);
+                });
+        }
+
+
+        [Fact]
+        public void Index_uniqueness_is_stored_in_snapshot()
+        {
+            var builder = new ModelBuilderFactory().CreateConventionBuilder();
+            builder.Entity<EntityWithTwoProperties>().Index(t => t.AlternateId).Unique();
+
+            var code =
+                 @"var builder = new ModelBuilder(new ConventionSet());
+
+builder.Entity(""Microsoft.Data.Entity.Commands.Migrations.ModelSnapshotTest+EntityWithTwoProperties"", b =>
+    {
+        b.Property<int>(""Id"")
+            .GenerateValueOnAdd()
+            .StoreGeneratedPattern(StoreGeneratedPattern.Identity)
+            .Annotation(""OriginalValueIndex"", 0);
+        b.Property<int>(""AlternateId"")
+            .Annotation(""OriginalValueIndex"", 1);
+        b.Key(""Id"");
+        b.Index(""AlternateId"")
+            .Unique();
+    });
+
+return builder.Model;
+";
+            Test(builder.Model, code,
+                o =>
+                {
+                    Assert.Equal(true, o.EntityTypes[0].GetIndexes().First().IsUnique);
+                });
+        }
+
 
         #endregion
 
@@ -120,6 +523,11 @@ return builder.Model;
 
             Assert.NotNull(value);
             assert(value);
+
+            //var diff = new ModelDiffer(new RelationalTypeMapper());
+            //var ops = diff.GetDifferences(model, value);
+
+            //Assert.Equal(0, ops.Count);
         }
     }
 }
